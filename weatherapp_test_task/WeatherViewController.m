@@ -10,7 +10,6 @@
 #import "WeatherModel.h"
 #import "CellForWeather.h"
 #import "WeatherData.h"
-#import <TSMessages/TSMessage.h>
 
 @interface WeatherViewController () <WeatherHTTPDelegate, UICollectionViewDataSource, UICollectionViewDelegate>
 
@@ -29,11 +28,9 @@
 #pragma mark - View
 
 - (void)viewDidLoad {
-    
-    self.weatherModel = [WeatherModel sharedModel];
-    [self.backgroundImage setImage:[UIImage imageNamed:@"1"]];
-    
     [super viewDidLoad];
+    self.weatherModel = [WeatherModel new];
+    [self.backgroundImage setImage:[UIImage imageNamed:@"1"]];
 }
 
 - (void)didReceiveMemoryWarning {
@@ -48,10 +45,19 @@
 
 -(void)viewDidAppear:(BOOL)animated{
     [super viewDidAppear:animated];
-    if (!_arrayWithWeatherData || ![_arrayWithWeatherData count]) {
+    if (!_arrayWithWeatherData) {
         [self.weatherModel getWeatherWithDelegate:self];
     }
     
+}
+
+
+#pragma mark - Color
+
+- (UIColor *)colorFromRGB:(NSInteger)rgbValue{
+    return [UIColor colorWithRed:((float)((rgbValue & 0xFF0000) >> 16))/255.0
+                           green:((float)((rgbValue & 0xFF00) >> 8))/255.0
+                            blue:((float)(rgbValue & 0xFF))/255.0 alpha:1];
 }
 
 
@@ -85,15 +91,12 @@
     
     NSString *const cellID = @"weatherCell";
     CellForWeather *cell = [collectionView dequeueReusableCellWithReuseIdentifier:cellID forIndexPath:indexPath];
-    
-    if (_arrayWithWeatherData) {
-
-        [cell.cellBackground setImage:[[UIImage imageNamed:@"cell_background"] stretchableImageWithLeftCapWidth:50 topCapHeight:50]];
-        [cell.weatherIcon setImage:[UIImage imageNamed:((WeatherData*)[self.arrayWithWeatherData objectAtIndex:indexPath.row+1]).code]];
-        [cell.weatherDesc setText:((WeatherData*)[self.arrayWithWeatherData objectAtIndex:indexPath.row+1]).info];
-        [cell.temperature setText:((WeatherData*)[self.arrayWithWeatherData objectAtIndex:indexPath.row+1]).temperature];
-        [cell.date setText:((WeatherData*)[self.arrayWithWeatherData objectAtIndex:indexPath.row+1]).date];
-    }
+    WeatherData * wObject  = [self.arrayWithWeatherData objectAtIndex:indexPath.row+1];
+    [cell.cellBackground setImage:[[UIImage imageNamed:@"cell_background"] stretchableImageWithLeftCapWidth:50 topCapHeight:50]];
+    [cell.weatherIcon setImage:[UIImage imageNamed:wObject.code]];
+    [cell.weatherDesc setText:wObject.info];
+    [cell.temperature setText:wObject.temperature];
+    [cell.date setText:wObject.date];
     
     return cell;
 }
@@ -107,10 +110,8 @@
 
         self.arrayWithWeatherData = [NSArray arrayWithArray:weatherDetail];
         if (!fromDB) {
-            [TSMessage showNotificationInViewController:self
-                                                  title:@"Success!"
-                                               subtitle:@"The weather was updated."
-                                                   type:TSMessageNotificationTypeSuccess];
+            [self showCustomAlertWithTitle:@"The weather updated successfully!"
+                                  andColor:[self colorFromRGB:0x51ba51]];
         }
         
         [self refreshCollectionView];
@@ -123,10 +124,7 @@
 #if DEBUG
     NSLog(@"Error %@", error);
 #endif
-    [TSMessage showNotificationInViewController:self
-                                          title:@"Error!"
-                                       subtitle:@"Probably, internet connection now is unavailable."
-                                           type:TSMessageNotificationTypeWarning];
+    [self showCustomAlertWithTitle:@"Network error!" andColor:[self colorFromRGB:0xf43131]];
 }
 
 
@@ -136,17 +134,22 @@
     
     [self.customAlertView setBackgroundColor:color];
     [self.alertViewTitle setText:title];
-    
+     self.alertViewConstraint.constant = 0.0f;
+
     [UIView animateWithDuration:0.5f
+                          delay:0.0f
+                        options:UIViewAnimationOptionAllowAnimatedContent
                      animations:^{
-                         self.alertViewConstraint.constant = 0.0f;
                          [self.view layoutIfNeeded];
+    
+                     } completion:^(BOOL finished) {
+                         if (finished) {
+                             self.alertViewConstraint.constant = -45.0f;
+                             [UIView animateWithDuration:0.5f delay:1.0f options:UIViewAnimationOptionAllowAnimatedContent animations:^{
+                                 [self.view layoutIfNeeded];
+                             } completion:nil];
+                         }
                      }];
- 
-    [UIView animateWithDuration:0.5f delay:1.0f options:UIViewAnimationOptionAllowAnimatedContent animations:^{
-        self.alertViewConstraint.constant = -45.0f;
-        [self.view layoutIfNeeded];
-    } completion:nil];
 }
 
 @end

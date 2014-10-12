@@ -5,93 +5,69 @@
 //  Created by Andrey Kompaniets on 22.09.14.
 //  Copyright (c) 2014 ARC. All rights reserved.
 //
-#define urlStr @"http://query.yahooapis.com/v1/public/yql?q=SELECT%20*%20FROM%20weather.forecast%20WHERE%20woeid=918981%20and%20u='c'&format=json&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys&callback="
+#define urlStr @"https://query.yahooapis.com/v1/public/yql?q=SELECT%20item%20FROM%20weather.forecast%20WHERE%20woeid%3D%22918981%22%20and%20u%3D%22c%22%20%7C%20truncate(count%3D2)&format=json&diagnostics=true&callback="
 
 #import "WeatherModel.h"
 #import "WeatherData.h"
 #import "AppDelegate.h"
+#import "CoreData.h"
 
 @interface WeatherModel()
 
 @property (strong, nonatomic) WeatherData *weatherData;
-@property (strong, nonatomic) NSManagedObjectContext *contextObject;
+@property (strong, nonatomic) CoreData *coreDataObject;
 @property (strong, nonatomic) NSMutableArray *weatherInfo;
-
-@property (copy) void(^didGetWeather)(NSArray *, BOOL);
-@property (copy) void(^didFailWithError)(NSError *);
 
 @end
 
 @implementation WeatherModel
 
 
-#pragma mark - Shared Object
-
-+ (WeatherModel *)sharedModel
-{
-    static dispatch_once_t pred;
-    static WeatherModel *_sharedHTTPClient = nil;
-    
-    dispatch_once(&pred, ^{
-        _sharedHTTPClient = [[WeatherModel alloc] init];
-        AppDelegate *delegate = [[UIApplication sharedApplication] delegate];
-        _sharedHTTPClient.contextObject = delegate.managedObjectContext;
-        _sharedHTTPClient.weatherInfo = [[NSMutableArray alloc] init];
-    });
-    return _sharedHTTPClient;
-}
-
-
 #pragma mark - Weather data fetcher\handler
 
 - (void)getWeatherWithDelegate:(id<WeatherHTTPDelegate>)delegate{
-   
-    if ([self.weatherInfo count]) {
-        [self.weatherInfo removeAllObjects];
+    if (!self.coreDataObject && !self.weatherInfo) {
+        self.coreDataObject = [CoreData coreDataModel];
+        self.weatherInfo = [NSMutableArray new];
     }
     
-    __weak typeof(self) weakSelf = self;
-    self.didGetWeather = ^(NSArray *array, BOOL fromDataBase){
-        if (delegate && [delegate respondsToSelector:@selector(weatherClient:didGetWeather:fromDataBase:)]) {
-            [delegate weatherClient:weakSelf didGetWeather:array fromDataBase:fromDataBase];
-        }
-    };
-    
-    self.didFailWithError = ^(NSError *error){
-        if (delegate && [delegate respondsToSelector:@selector(weatherClient:didFailWithError:)]) {
-            [delegate weatherClient:weakSelf didFailWithError:error];
-        }
-    };
+    self.delegate = delegate;
+    [self.weatherInfo removeAllObjects];
     
     if (![[self fetchWeatherDataFromDataBase] count]) {
-            [self updateWeatherData];
-        }else{
-            self.didGetWeather([self fetchWeatherDataFromDataBase],YES);
-            [self updateWeatherData];
-        }
+        [self fetchWeatherDataFromServer];
+    }else{
+        [self didGetWeatherWithData:[self fetchWeatherDataFromDataBase] error:nil fromDataBase:YES];
+        [self fetchWeatherDataFromServer];
+    }
 }
 
-- (void)updateWeatherData{
-        
-          dispatch_queue_t queue = dispatch_queue_create("arc.weatherapp.test.queue", DISPATCH_QUEUE_SERIAL);
-    dispatch_async(queue, ^{
+- (void)didGetWeatherWithData:(NSArray *)data error:(NSError *)error fromDataBase:(BOOL)fromDB{
+    if (data && !error) {
+        if (self.delegate && [self.delegate respondsToSelector:@selector(weatherClient:didGetWeather:fromDataBase:)]) {
+            [self.delegate weatherClient:self didGetWeather:data fromDataBase:fromDB];
+        }
+    }else if (!data && error){
+        if (self.delegate && [self.delegate respondsToSelector:@selector(weatherClient:didFailWithError:)]) {
+            [self.delegate weatherClient:self didFailWithError:error];
+        }
+    }
+}
+
+- (void)fetchWeatherDataFromServer{
+
         [self GET:urlStr parameters:nil success:^(AFHTTPRequestOperation *operation, id responseObject) {
             if (responseObject) {
-                NSArray *response = (NSArray*)[[[[[responseObject objectForKey:@"query"]
-                                                  objectForKey:@"results"]
-                                                 objectForKey:@"channel"]
-                                                objectForKey:@"item"]
-                                               objectForKey:@"forecast"];
+                NSArray *response = (NSArray*)[responseObject valueForKeyPath:@"query.results.channel.item.forecast"];
                 [self deleteAllObjectsInDataBase];
-                NSArray *processedArray = [self handleWeatherData:response];
-                self.didGetWeather(processedArray, NO);
+                    NSArray *processedArray = [self handleWeatherData:response];
+                    [self didGetWeatherWithData:processedArray error:nil fromDataBase:NO];
             }
         } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
             if (error) {
-                self.didFailWithError(error);
+                [self didGetWeatherWithData:nil error:error fromDataBase:NO];
             }
         }];
-    });
 }
 
 - (NSArray *)handleWeatherData:(NSArray *)weatherArray{
@@ -103,7 +79,7 @@
      
         self.weatherData = [NSEntityDescription
                                         insertNewObjectForEntityForName:@"WeatherData"
-                                        inManagedObjectContext:_contextObject];
+                                        inManagedObjectContext:_coreDataObject.managedObjectContext];
         
         [formatter setDateFormat:@"dd MMM yyyy"];
         NSDate* date = [formatter dateFromString:[weather objectForKey:@"date"]];
@@ -119,13 +95,13 @@
         //
         [self.weatherInfo addObject:self.weatherData];
     }
-    return [self.weatherInfo copy];
+    return self.weatherInfo;
 }
 
 - (BOOL)saveObjectIntoDataBase:(WeatherData *)data{
     
     NSError *error = nil;
-    if (![self.contextObject save:&error]) {
+    if (![_coreDataObject.managedObjectContext save:&error]) {
         NSLog(@"Error --- %@", [error localizedDescription]);
         return NO;
     };
@@ -135,25 +111,25 @@
 - (NSArray *)fetchWeatherDataFromDataBase{
     
     NSFetchRequest *request = [[NSFetchRequest alloc] init];
-    NSEntityDescription *description = [NSEntityDescription entityForName:@"WeatherData" inManagedObjectContext:self.contextObject];
+    NSEntityDescription *description = [NSEntityDescription entityForName:@"WeatherData" inManagedObjectContext:_coreDataObject.managedObjectContext];
     [request setEntity:description];
     [request setResultType:NSManagedObjectResultType];
     
     NSError *error = nil;
-    NSArray *resultArray = [self.contextObject executeFetchRequest:request error:&error];
+    NSArray *resultArray = [_coreDataObject.managedObjectContext executeFetchRequest:request error:&error];
     if (error) {
         NSLog(@"Error -- %@", [error localizedDescription]);
         return nil;
     }
-    return resultArray;
+    return [resultArray copy];
 }
 
 - (void)deleteAllObjectsInDataBase{
     NSArray *existingObjects = [self fetchWeatherDataFromDataBase];
     for (NSManagedObject *data in existingObjects) {
-        [self.contextObject deleteObject:data];
-        [self.contextObject save:nil];
+        [_coreDataObject.managedObjectContext deleteObject:data];
     }
+    [_coreDataObject.managedObjectContext save:nil];
 }
 
 @end

@@ -6,9 +6,6 @@
 //  Copyright (c) 2014 ARC. All rights reserved.
 //
 
-
-
-
 #import <Foundation/Foundation.h>
 #import <AFNetworking.h>
 
@@ -19,7 +16,6 @@
 
 @property (weak, nonatomic) id<WeatherHTTPDelegate> delegate;
 
-+ (WeatherModel *)sharedModel;
 - (void)getWeatherWithDelegate:(id<WeatherHTTPDelegate>)delegate;
 
 @end
