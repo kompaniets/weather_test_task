@@ -5,7 +5,7 @@
 //  Created by Andrey Kompaniets on 22.09.14.
 //  Copyright (c) 2014 ARC. All rights reserved.
 //
-#define urlStr @"https://query.yahooapis.com/v1/public/yql?q=SELECT%20item%20FROM%20weather.forecast%20WHERE%20woeid%3D%22918981%22%20and%20u%3D%22c%22%20%7C%20truncate(count%3D2)&format=json&diagnostics=true&callback="
+#define urlStr @"https://query.yahooapis.com/v1/public/yql?q=SELECT%20*%20FROM%20weather.forecast%20WHERE%20woeid%3D%22918981%22%20and%20u%3D%22c%22%20%7C%20truncate(count%3D3)&format=json&diagnostics=true&env=store%3A%2F%2Fdatatables.org%2Falltableswithkeys&callback="
 
 #import "WeatherModel.h"
 #import "WeatherData.h"
@@ -21,7 +21,6 @@
 @end
 
 @implementation WeatherModel
-
 
 #pragma mark - Weather data fetcher\handler
 
@@ -55,31 +54,32 @@
 }
 
 - (void)fetchWeatherDataFromServer{
-
-        [self GET:urlStr parameters:nil success:^(AFHTTPRequestOperation *operation, id responseObject) {
-            if (responseObject) {
-                NSArray *response = (NSArray*)[responseObject valueForKeyPath:@"query.results.channel.item.forecast"];
-                [self deleteAllObjectsInDataBase];
-                    NSArray *processedArray = [self handleWeatherData:response];
-                    [self didGetWeatherWithData:processedArray error:nil fromDataBase:NO];
-            }
-        } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
-            if (error) {
-                [self didGetWeatherWithData:nil error:error fromDataBase:NO];
-            }
-        }];
+    
+    [self GET:urlStr parameters:nil success:^(AFHTTPRequestOperation *operation, id responseObject) {
+        if (responseObject) {
+            NSArray *response = (NSArray*)[responseObject valueForKeyPath:@"query.results.channel.item.forecast"];
+            [self deleteAllObjectsInDataBase];
+            NSArray *processedArray = [self handleWeatherData:response];
+            [self didGetWeatherWithData:processedArray error:nil fromDataBase:NO];
+        }
+    } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
+        if (error) {
+            [self didGetWeatherWithData:nil error:error fromDataBase:NO];
+        }
+    }];
 }
 
-- (NSArray *)handleWeatherData:(NSArray *)weatherArray{
 
+- (NSArray *)handleWeatherData:(NSArray *)weatherArray{
+    
     NSDateFormatter *formatter = [NSDateFormatter new];
     
     for (int a=0; [weatherArray count]>3 ? a<3 : a<[weatherArray count]; a++) {
         NSDictionary *weather = [weatherArray objectAtIndex:a];
-     
+        
         self.weatherData = [NSEntityDescription
-                                        insertNewObjectForEntityForName:@"WeatherData"
-                                        inManagedObjectContext:_coreDataObject.managedObjectContext];
+                            insertNewObjectForEntityForName:@"WeatherData"
+                            inManagedObjectContext:_coreDataObject.managedObjectContext];
         
         [formatter setDateFormat:@"dd MMM yyyy"];
         NSDate* date = [formatter dateFromString:[weather objectForKey:@"date"]];
@@ -90,15 +90,14 @@
         self.weatherData.temperature = [NSString stringWithFormat:@"%@ - %@ °C",[weather objectForKey:@"low"], [weather objectForKey:@"high"]];
         self.weatherData.info = [weather objectForKey:@"text"];
         
-        //Save object into data base
-        [self saveObjectIntoDataBase:self.weatherData];
-        //
         [self.weatherInfo addObject:self.weatherData];
     }
+    [self saveObjectIntoDataBase];
+    
     return self.weatherInfo;
 }
 
-- (BOOL)saveObjectIntoDataBase:(WeatherData *)data{
+- (BOOL)saveObjectIntoDataBase{
     
     NSError *error = nil;
     if (![_coreDataObject.managedObjectContext save:&error]) {

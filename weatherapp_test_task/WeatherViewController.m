@@ -71,12 +71,11 @@
 #pragma mark - Today View
 
 - (void)configureTodayView{
+    WeatherData * sObject  = [self.arrayWithWeatherData objectAtIndex:0];
     [self.todayBackgroundImage setImage:[UIImage imageNamed:@"title_image"]];
-    [self.todayWeatherIcon setImage:[UIImage imageNamed:((WeatherData*)[self.arrayWithWeatherData objectAtIndex:0]).code]];
-    [self.todayTemp setText:[NSString stringWithFormat:@"%@, %@",
-                            ((WeatherData*)[self.arrayWithWeatherData objectAtIndex:0]).temperature,
-                             ((WeatherData*)[self.arrayWithWeatherData objectAtIndex:0]).info]];
-    [self.todayWeatherDate setText:((WeatherData*)[self.arrayWithWeatherData objectAtIndex:0]).date];
+    [self.todayWeatherIcon setImage:[UIImage imageNamed:sObject.code]];
+    [self.todayTemp setText:[NSString stringWithFormat:@"%@, %@", sObject.temperature, sObject.info]];
+    [self.todayWeatherDate setText:sObject.date];
 }
 
 
@@ -107,7 +106,7 @@
 - (void)weatherClient:(WeatherModel *)client didGetWeather:(NSArray *)weatherDetail fromDataBase:(BOOL)fromDB{
     
     if (weatherDetail) {
-
+        
         self.arrayWithWeatherData = [NSArray arrayWithArray:weatherDetail];
         if (!fromDB) {
             [self showCustomAlertWithTitle:@"The weather updated successfully!"
@@ -115,7 +114,7 @@
         }
         
         [self refreshCollectionView];
-
+        
         [self configureTodayView];
     }
 }
@@ -134,14 +133,14 @@
     
     [self.customAlertView setBackgroundColor:color];
     [self.alertViewTitle setText:title];
-     self.alertViewConstraint.constant = 0.0f;
-
+    self.alertViewConstraint.constant = 0.0f;
+    
     [UIView animateWithDuration:0.5f
                           delay:0.0f
                         options:UIViewAnimationOptionAllowAnimatedContent
                      animations:^{
                          [self.view layoutIfNeeded];
-    
+                         
                      } completion:^(BOOL finished) {
                          if (finished) {
                              self.alertViewConstraint.constant = -45.0f;
